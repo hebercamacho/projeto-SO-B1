@@ -37,9 +37,36 @@ public class VirtualMemoryManager
         }
     }
 
-    public int TratarPageFault()
+    private int TratarPageFault()
     {
+        ReadFromDisk("HardDrive.csv");
         return -1;
+    }
+
+    private void ReadFromDisk(string parameter)
+    {
+        try
+        {
+            // Open the text file using a stream reader.
+            using (var sr = new StreamReader(parameter))
+            {
+                // Read the stream as a string, and write the string to the console.
+                while(sr.Peek() != -1)
+                {
+                    string? linha = sr.ReadLine();
+                    if(!string.IsNullOrEmpty(linha))
+                    {
+                        Console.WriteLine($"Linha lida do HD: {linha}");
+                        string[] elementos = linha.Split(';');
+                    }
+                }
+            }
+        }
+        catch (IOException e)
+        {
+            Console.WriteLine("The file could not be read: ");
+            Console.WriteLine(e.Message);
+        }
     }
 }
 
