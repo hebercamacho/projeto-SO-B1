@@ -158,7 +158,6 @@ public class VirtualMemoryManager
                     string? linha = sr.ReadLine();
                     if (!string.IsNullOrEmpty(linha))
                     {
-                        // Console.WriteLine($"Linha lida do HD: {linha}");
                         string[] elementos = linha.Split(';');
                         if (elementos[0] == pageNumber.ToString())
                             return elementos[1].Substring(0, pageOffset);
@@ -221,9 +220,7 @@ public class PageTable
         for (int i = 0; i < frames; i++)
         {
             this.pageList.Add(new Page((byte)i));
-            // this.pageList[i].set_frame((byte)i);
         }
-        // Console.WriteLine($"Page table capacity: {this.pageList.Capacity}");
     }
 
     //função que retorna qual deve ser o endereço fisico da substituição a ser realizada 
@@ -251,17 +248,11 @@ public class PageTable
         ulong nextOrder = this.pageList.Max((pg) => pg.order) + 1;
         //inserir a pagina na pagetable substituindo uma antiga
         this.pageList[replace_here] = new Page(pageNumber, true, nextOrder);
-        //recuperar o frame da page sendo substituida
-        // var frame = this.pageList[replace_here].get_frame();
         //se for passado com o que preencher, iremos preencher
         this.pageList[replace_here].set_frame(address);
-
-        // return frame;
     }
 }
-
-
-
+//classe auxiliar para gerar uma exception customizada
 public class InvalidBitException : Exception
 {
 
