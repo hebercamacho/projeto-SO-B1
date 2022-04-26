@@ -2,12 +2,15 @@
 
 public class Program
 {
+    public static double contadorPageFault = 0;
+    public static double totalBuscaPage = 0;
     public static void Main(string[] args)
     {
         new Program().Executar();
     }
     public void Executar()
     {
+        
         var vmm = new VirtualMemoryManager(64, 256);
         byte offset = 255;
         var teste = vmm.TraduzirEndereco(0, offset);
@@ -15,10 +18,17 @@ public class Program
         for (byte i = 0; i < 4; i++)
         {
             teste = vmm.TraduzirEndereco(i, offset);
+
             Console.WriteLine($"Endereco encontrado para {i}: {teste}");
             Console.WriteLine($"Escrito na memoria fisica: {i} - {Encoding.ASCII.GetString(vmm.physycalMemory, 0, offset)}");
 
         }
+        EstatisticaPageFault();
+    }
+
+    public void EstatisticaPageFault() {
+        double estatistica = Math.Round(contadorPageFault/ totalBuscaPage, 3);
+        Console.WriteLine($"Percentual de page faults: {estatistica*100}%");
     }
 }
 
@@ -37,13 +47,15 @@ public class VirtualMemoryManager
     {
         try
         {
+            Program.totalBuscaPage++;
             var x = this.pageTable.pageList.ElementAt(pageNumber).get_frame();
             return x;
         }
         catch (InvalidBitException)
         {
-            Console.WriteLine($"Page {pageNumber} is not in physical memory! Recovering from disk...");
+            Console.WriteLine($"Page {pageNumber} não está na memória física! Recuperando do disco...");
             var y = TratarPageFault(pageNumber, pageOffset);
+            Program.contadorPageFault++;
             return y;
         }
     }
@@ -71,7 +83,7 @@ public class VirtualMemoryManager
     {
         try
         {
-            // Open the text file using a stream reader.
+            // Abrir o arquivo de texto usando o stream reader
             using (var sr = new StreamReader(fileName))
             {
                 while (sr.Peek() != -1)
@@ -91,7 +103,7 @@ public class VirtualMemoryManager
         }
         catch (IOException e)
         {
-            Console.WriteLine("The file could not be read: ");
+            Console.WriteLine("O arquivo não pode ser lido: ");
             Console.WriteLine(e.Message);
             throw e;
         }
@@ -139,7 +151,6 @@ public class PageTable
     {
         int replace_here;
         replace_here = this.pageList.FindIndex((pg) => pg.validBit == false);
-
         if (replace_here == -1)
         {
             // não achamos nenhum frame disponível! pegar o primeiro que entrou (FIFO)
@@ -151,7 +162,7 @@ public class PageTable
         }
         if (replace_here == -1)
         {
-            replace_here = 0; //shoudnt happen but just in case
+            replace_here = 0; //não deve ocorrer
         }
         //pegar ultima order pra incrementar;
         ulong nextOrder = this.pageList.Max((pg) => pg.order) + 1;
