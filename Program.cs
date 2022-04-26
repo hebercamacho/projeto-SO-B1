@@ -7,6 +7,8 @@ public class Program
     public static int tamanhoMemoriaRAMemKb = 64;
     public static string nomeHardDrive = "HardDrive.csv";
     private static Random random = new Random();
+    public static double contadorPageFault = 0;
+    public static double totalBuscaPage = 0;
     public static void Main(string[] args)
     {
         //realizar preenchimento do HD
@@ -40,7 +42,7 @@ public class Program
         {
             teste = vmm.TraduzirEndereco((byte)(i % 255), offset);
             Console.WriteLine($"Endereco encontrado para {i}: {teste}");
-            if(teste != -1)
+            if (teste != -1)
                 Console.WriteLine($"Escrito na memoria fisica: {i} - {Encoding.ASCII.GetString(vmm.physycalMemory, teste, offset)}");
 
         }
@@ -49,10 +51,17 @@ public class Program
         {
             teste = vmm.TraduzirEndereco((byte)(i % 255), offset);
             Console.WriteLine($"Endereco encontrado para {i}: {teste}");
-            if(teste != -1)
+            if (teste != -1)
                 Console.WriteLine($"Escrito na memoria fisica: {i} - {Encoding.ASCII.GetString(vmm.physycalMemory, teste, offset)}");
 
         }
+        EstatisticaPageFault();
+    }
+
+    public void EstatisticaPageFault()
+    {
+        double estatistica = Math.Round(contadorPageFault / totalBuscaPage, 3);
+        Console.WriteLine($"Percentual de page faults: {estatistica * 100}%");
     }
 }
 
@@ -73,13 +82,17 @@ public class VirtualMemoryManager
     {
         try
         {
+            Program.totalBuscaPage++;
             //achar o endereco fisico gravado na page table, se estiver na memoria fisica
-            return this.pageTable.pageList.ElementAt(pageNumber).get_frame();
+            //se nao estiver com valid bit, vai gerar a exception abaixo
+            var paginaBuscada = this.pageTable.pageList.Find(p => p.get_page() == pageNumber);
+            return (paginaBuscada != null) ? paginaBuscada.get_frame() : -1;
         }
         catch (InvalidBitException)
         {
+            Program.contadorPageFault++;
             //se nao estiver na memoria fisica, entra nesta exception e recupera do HD
-            Console.WriteLine($"Page {pageNumber} nao esta na memoria fisica! Recuperando do HD...");
+            Console.WriteLine($"Page {pageNumber} não está na memória física! Recuperando do disco...");
             return TratarPageFault(pageNumber, pageOffset);
         }
     }
@@ -97,39 +110,36 @@ public class VirtualMemoryManager
             byte[] bytes = Encoding.ASCII.GetBytes(pageContent);
 
             //procurar primeiro espaço disponivel na memoria fisica com tamanho necessario
-            byte enderecoFisico = 0;
+            int enderecoFisico = 0;
             for (int i = 0; i < physycalMemory.Length; i++)
             {
                 if (physycalMemory[i] == new byte())
                 {
                     int TamanhoDoEspaco = 0;
-                    for (int j = i; j < physycalMemory.Length && j < pageOffset; j++)
+                    for (int j = i; j < physycalMemory.Length && j < i+pageOffset; j++)
                     {
                         if (physycalMemory[j] == new byte())
                         {
                             TamanhoDoEspaco++;
-                            if(TamanhoDoEspaco == pageOffset)
+                            if (TamanhoDoEspaco == pageOffset)
                             {
                                 //chegando aqui, significa que o espaço iniciado em i é suficiente pra encaixar essa pagina
-                                enderecoFisico = physycalMemory[i];
+                                enderecoFisico = i;
                                 break;
                             }
                         }
                     }
+                    //vamos fazer um page replace para atualizar a page table
+                    pageTable.PageReplace(pageNumber, enderecoFisico);
+                    //inserir a pagina na memoria, byte a byte
+                    int k = 0;
+                    foreach (byte b in bytes)
+                    {
+                        this.physycalMemory[enderecoFisico + k] = b;
+                        k++;
+                    }
+                    break;
                 }
-                if(enderecoFisico == 0) 
-                {
-                    //memoria fisica nao tem espaço, então vamos fazer um page replace
-                    enderecoFisico = pageTable.PageReplace();
-                }
-                //inserir a pagina na memoria, byte a byte
-                int k = 0;
-                foreach (byte b in bytes)
-                {
-                    this.physycalMemory[enderecoFisico + k] = b;
-                    k++;
-                }
-                break;
             }
             return enderecoFisico;
         }
@@ -140,7 +150,7 @@ public class VirtualMemoryManager
     {
         try
         {
-            // Open the text file using a stream reader.
+            // Abrir o arquivo de texto usando o stream reader
             using (var sr = new StreamReader(fileName))
             {
                 while (sr.Peek() != -1)
@@ -160,7 +170,7 @@ public class VirtualMemoryManager
         }
         catch (IOException e)
         {
-            Console.WriteLine("The file could not be read: ");
+            Console.WriteLine("O arquivo não pode ser lido: ");
             Console.WriteLine(e.Message);
             throw e;
         }
@@ -171,23 +181,34 @@ public class Page
 {
     public bool validBit { get; private set; }
     public ulong order { get; set; }
-    byte frame;
+    byte pageNumber;
+    int frame;
 
-    public byte get_frame()
+    public int get_frame()
     {
         if (this.validBit)
             return this.frame;
         throw new InvalidBitException();
     }
-    public void set_frame(byte value)
+    public void set_frame(int value)
     {
         frame = value;
     }
 
-    public Page(bool valid = false, ulong order = 0)
+    public byte get_page()
+    {
+        return this.pageNumber;
+    }
+    public void set_page(byte value)
+    {
+        pageNumber = value;
+    }
+
+    public Page(byte pageNumber = 0, bool valid = false, ulong order = 0)
     {
         this.validBit = valid;
         this.order = order;
+        this.pageNumber = pageNumber;
     }
 }
 
@@ -197,21 +218,21 @@ public class PageTable
     public PageTable(int frames) //256 bytes
     {
         this.pageList = new List<Page>(frames);
-        for (var i = 0; i < frames; i++)
+        for (int i = 0; i < frames; i++)
         {
-            this.pageList.Add(new Page());
+            this.pageList.Add(new Page((byte)i));
+            // this.pageList[i].set_frame((byte)i);
         }
-        Console.WriteLine($"Page table capacity: {this.pageList.Capacity}");
+        // Console.WriteLine($"Page table capacity: {this.pageList.Capacity}");
     }
 
     //função que retorna qual deve ser o endereço fisico da substituição a ser realizada 
-    public byte PageReplace(byte address = default)
+    public void PageReplace(byte pageNumber, int address)
     {
         int replace_here;
 
         //encontra o primeiro invalidBit
         replace_here = this.pageList.FindIndex((pg) => pg.validBit == false);
-
         if (replace_here == -1)
         {
             // não achamos nenhum frame disponível! pegar o primeiro que entrou (FIFO)
@@ -223,21 +244,19 @@ public class PageTable
         }
         if (replace_here == -1)
         {
-            replace_here = 0; //shoudnt happen but just in case
+            replace_here = 0; //não deve ocorrer
         }
 
         //pegar ultima order pra incrementar;
         ulong nextOrder = this.pageList.Max((pg) => pg.order) + 1;
-        //FIXME isso aqui vai buscar coisa inexistente
-        //recuperar o frame da page sendo substituida
-        var frame = this.pageList[replace_here].get_frame();
         //inserir a pagina na pagetable substituindo uma antiga
-        this.pageList[replace_here] = new Page(true, nextOrder);
+        this.pageList[replace_here] = new Page(pageNumber, true, nextOrder);
+        //recuperar o frame da page sendo substituida
+        // var frame = this.pageList[replace_here].get_frame();
         //se for passado com o que preencher, iremos preencher
-        if(address != default)
-            this.pageList[replace_here].set_frame(frame);
-    
-        return frame;
+        this.pageList[replace_here].set_frame(address);
+
+        // return frame;
     }
 }
 
